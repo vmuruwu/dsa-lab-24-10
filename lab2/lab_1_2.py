@@ -14,6 +14,6 @@ if 1 <= number_3 <= 50:
     num_list.append(number_3)
 
 if num_list:
-    print("Числа в интервале [1, 50]:", *num_list)
+    print('Числа в интервале [1, 50]:', *num_list)
 else:
-    print("Нет чисел, входящих в интервал [1, 50].")
+    print('Нет чисел, входящих в интервал [1, 50].')
