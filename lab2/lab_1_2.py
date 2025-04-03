@@ -1,13 +1,19 @@
 #Считать с клавиатуры три произвольных числа, вывести в консоль те числа, которые попадают в интервал [1, 50].
 
-num1 = int(input('Введите число 1: '))
-num2  = int(input('Введите число 2: '))
-num3 = int(input('Введите число 3: '))
+number_1 = float(input('Введите 1 число: '))
+number_2 = float(input('Введите 2 число: '))
+number_3 = float(input('Введите 3 число: '))
 
-numbers = [num1, num2, num3]
-in_interval = [num for num in numbers if 1<= num <=50]
+num_list = []
 
-if in_interval:
-    print("Числа, входящие в интервал:", ", ".join(map(str, in_interval)))
+if 1 <= number_1 <= 50:
+    num_list.append(number_1)
+if 1 <= number_2 <= 50:
+    num_list.append(number_2)
+if 1 <= number_3 <= 50:
+    num_list.append(number_3)
+
+if num_list:
+    print("Числа в интервале [1, 50]:", *num_list)
 else:
-    print("Нет чисел, входящих в интервал.")
+    print("Нет чисел, входящих в интервал [1, 50].")
