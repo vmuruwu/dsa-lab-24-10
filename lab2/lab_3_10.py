@@ -5,7 +5,8 @@ if len(sys.argv) < 2:
     sys.exit()
 
 try:
-    numbers = [int(arg) for arg in sys.argv[1:]]  # Преобразуем все параметры в целые числа
+    # Преобразуем все параметры в целые числа
+    numbers = [int(arg) for arg in sys.argv[1:]]
 except ValueError:
     print("Ошибка: все параметры должны быть целыми числами.")
     sys.exit()
