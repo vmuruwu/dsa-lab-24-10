@@ -9,9 +9,17 @@ while True:
             print("Ошибка: последовательность не должна быть пустой!")
             continue
         break
+    if input_data == '':
+        print('Ошибка: введите число!')
+        continue
 
-    if (input_data.lstrip('-').isnumeric()):
-        number = float(input_data)
+    is_valid = (
+            (input_data[0] == '-' and input_data[1:].isdigit())
+            or input_data.isdigit()
+    )
+
+    if is_valid:
+        number = int(input_data)
         numbers.append(number)
     else:
         print("Ошибка: введено не число!")
