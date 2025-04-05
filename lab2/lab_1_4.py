@@ -2,7 +2,7 @@ numbers = []
 print("Введите последовательность целых чисел. Для завершения ввода введите 'q':")
 
 while True:
-    input_data = input("Введите число (или 'q' для завершения): ").strip()
+    input_data = input("Введите число (или 'q' для завершения): ")
 
 
     if input_data.lower() == 'q':
@@ -21,10 +21,9 @@ while True:
     except ValueError:
         print("Ошибка: введено не число!")
 
-# Вычисление суммы и количества
+
 sum_numbers = sum(numbers)
 count_numbers = len(numbers)
 
-# Вывод результатов
 print(f"Сумма всех чисел: {sum_numbers}")
 print(f"Количество чисел: {count_numbers}")
