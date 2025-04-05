@@ -11,7 +11,7 @@ while True:
             continue
         break
 
-    if not input_data:
+    if input_data == '':
         print('Ошибка: введите число!')
         continue
 
