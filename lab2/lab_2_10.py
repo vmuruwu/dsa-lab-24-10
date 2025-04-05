@@ -14,7 +14,7 @@ def to_upper_char(char):
         return 'Ё'
     return char
 
-# Разбиваем строку на слова вручную (без split())
+# Разбиваем строку на слова
 words = []
 current_word = []
 in_word = False
@@ -35,7 +35,8 @@ if current_word:
 # Обрабатываем каждое слово: первая буква - заглавная
 processed_words = []
 for word in words:
-    if word:  # Если слово не пустое
+    # Если слово не пустое
+    if word:
         first_char = to_upper_char(word[0])
         processed_word = first_char + word[1:] if len(word) > 1 else first_char
         processed_words.append(processed_word)
@@ -64,4 +65,3 @@ result = ''.join(result)
 
 # Выводим результат
 print("Результат:", result)
-
