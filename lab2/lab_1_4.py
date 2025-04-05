@@ -22,8 +22,14 @@ while True:
         print("Ошибка: введено не число!")
 
 
-sum_numbers = sum(numbers)
-count_numbers = len(numbers)
+sum_numbers = 0
+count_numbers = 0
+i = 0
+
+while i < len(numbers):
+    sum_numbers += numbers[i]
+    count_numbers += 1
+    i += 1
 
 print(f"Сумма всех чисел: {sum_numbers}")
 print(f"Количество чисел: {count_numbers}")
