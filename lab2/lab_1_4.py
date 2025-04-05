@@ -2,36 +2,28 @@ numbers = []
 print("Введите последовательность целых чисел. Для завершения ввода введите 'q':")
 
 while True:
-    input_data = input("Введите число (или 'q' для завершения): ")
+    input_data = input("Введите число (или 'q' для завершения): ").strip()
 
-    if input_data == 'q':
+
+    if input_data.lower() == 'q':
         if not numbers:
             print("Ошибка: последовательность не должна быть пустой!")
             continue
         break
-    if input_data == '':
+
+    if not input_data:
         print('Ошибка: введите число!')
         continue
 
-    is_valid = (
-            (input_data[0] == '-' and input_data[1:].isdigit())
-            or input_data.isdigit()
-    )
-
-    if is_valid:
+    try:
         number = int(input_data)
         numbers.append(number)
-    else:
+    except ValueError:
         print("Ошибка: введено не число!")
 
-sum_numbers = 0
-count_numbers = 0
-i = 0
-
-while i < len(numbers):
-    sum_numbers += numbers[i]
-    count_numbers += 1
-    i += 1
+# Вычисление суммы и количества
+sum_numbers = sum(numbers)
+count_numbers = len(numbers)
 
 # Вывод результатов
 print(f"Сумма всех чисел: {sum_numbers}")
