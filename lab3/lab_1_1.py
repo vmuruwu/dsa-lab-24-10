@@ -4,15 +4,17 @@ import json
 
 app = Flask(__name__)
 
-
+# СЕРВЕРНАЯ ЧАСТЬ
 # 1) GET /number/
 @app.route('/number/', methods=['GET'])
 def get_number():
-    param = request.args.get('param', default=1, type = float)
-    # Генерируем случайное число от 0 до 10
-    random_num = random.random() * 10
+    param = request.args.get('param', default=1, type=float)
+    # Генерируем случайное число от 1 до 10
+    random_num = random.randint(1, 10)
     result = random_num * param
-    return jsonify({"result": result})
+    operation = '*'  # Здесь операция умножения
+    return jsonify({"result": result, "operation": operation})
+
 
 
 @app.route('/number/', methods=['POST'])
@@ -22,7 +24,7 @@ def post_number():
         return jsonify({"error": "Invalid JSON or missing 'jsonParam'"}), 400
 
     json_param = data['jsonParam']
-    random_num = random.random() * 10
+    random_num = random.randint(1, 10)
     operation = random.choice(['+', '-', '*', '/'])
 
     if operation == '+':
@@ -44,7 +46,7 @@ def post_number():
 # 3) DELETE /number/
 @app.route('/number/', methods=['DELETE'])
 def delete_number():
-    random_num = random.random() * 10
+    random_num = random.randint(1, 10)
     operation = random.choice(['+', '-', '*', '/'])
 
     return jsonify({
