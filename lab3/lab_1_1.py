@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import random
-import json
 
 app = Flask(__name__)
 
@@ -9,11 +8,10 @@ app = Flask(__name__)
 @app.route('/number/', methods=['GET'])
 def get_number():
     param = request.args.get('param', default=1, type=float)
-    # Генерируем случайное число от 1 до 10
     random_num = random.randint(1, 10)
     result = random_num * param
-    operation = '*'  # Здесь операция умножения
-    return jsonify({"result": result, "operation": operation})
+    operation = '*'
+    return jsonify({"result": int(result), "operation": operation})
 
 
 

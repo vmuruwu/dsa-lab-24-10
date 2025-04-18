@@ -9,7 +9,7 @@ if get_response.status_code == 200:
     get_data = get_response.json()
     if 'result' in get_data and 'operation' in get_data:
         get_result = get_data['result']
-        get_operation = get_data['operation']  # Запоминаем операцию
+        get_operation = get_data['operation']
         print(f"[GET] param: {param_get}, result: {get_result}, operation: {get_operation}")
     else:
         print("Ошибка: отсутствуют ключи 'result' или 'operation' в ответе GET запроса.")
@@ -18,11 +18,9 @@ else:
 
 # === 2. POST /number/ ===
 param_post = random.randint(1, 10)
-headers = {'Content-Type': 'application/json'}
 post_response = requests.post(
     'http://127.0.0.1:5000/number/',
-    json={'jsonParam': param_post},
-    headers=headers
+    json={'jsonParam': param_post}
 )
 
 if post_response.status_code == 200:
@@ -52,8 +50,8 @@ else:
 
 # === 4. Собираем выражение и считаем ===
 
-    # Этап 1: GET результат <POST operation> POST результат
-if post_operation == '+':
+# Этап 1: GET результат <POST operation> POST результат
+if post_operation == '+':   
     intermediate = get_result + post_result
 elif post_operation == '-':
     intermediate = get_result - post_result
