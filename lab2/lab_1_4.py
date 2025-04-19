@@ -4,8 +4,7 @@ print("Введите последовательность целых чисел
 while True:
     input_data = input("Введите число (или 'q' для завершения): ")
 
-
-    if input_data.lower() == 'q':
+    if input_data == 'q':
         if not numbers:
             print("Ошибка: последовательность не должна быть пустой!")
             continue
@@ -20,7 +19,6 @@ while True:
         numbers.append(number)
     except ValueError:
         print("Ошибка: введено не число!")
-
 
 sum_numbers = 0
 count_numbers = 0
