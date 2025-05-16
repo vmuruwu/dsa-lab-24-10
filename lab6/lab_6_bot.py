@@ -18,6 +18,20 @@ dp = Dispatcher()
 
 state = {}
 
+
+async def is_admin(chat_id):
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(f"http://localhost:5003/is_admin/{chat_id}") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get('is_admin', False)
+                return False
+        except Exception as e:
+            logging.error(f"Ошибка при проверке администратора: {e}")
+            return False
+
+
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     kb = InlineKeyboardBuilder()
@@ -32,6 +46,10 @@ async def general_callback_handler(callback: CallbackQuery):
     data = callback.data
 
     if data == "manage":
+        if not await is_admin(str(callback.from_user.id)):
+            await callback.message.answer("⚠️ Эта команда доступна только администраторам")
+            return
+
         kb = InlineKeyboardBuilder()
         kb.button(text="Добавить валюту", callback_data="add")
         kb.button(text="Удалить валюту", callback_data="delete")
@@ -56,6 +74,10 @@ async def general_callback_handler(callback: CallbackQuery):
         await callback.message.answer("Введите название валюты:")
 
     elif data in ["add", "delete", "update"]:
+        if not await is_admin(str(callback.from_user.id)):
+            await callback.message.answer("⚠️ Эта команда доступна только администраторам")
+            return
+
         action = data
         state[callback.from_user.id] = {"action": action}
         await callback.message.answer("Введите название валюты:")
@@ -91,7 +113,8 @@ async def handle_text(message: Message):
 
             elif action == "delete":
                 async with aiohttp.ClientSession() as session:
-                    async with session.post("http://localhost:5001/delete", json={"currency_name": user_state["currency_name"]}) as resp:
+                    async with session.post("http://localhost:5001/delete",
+                                            json={"currency_name": user_state["currency_name"]}) as resp:
                         if resp.status == 200:
                             await message.answer("Валюта удалена")
                         elif resp.status == 404:
@@ -135,7 +158,8 @@ async def handle_text(message: Message):
                 await message.answer("Введите корректное число для суммы.")
                 return
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://localhost:5002/convert?currency_name={user_state['currency_name']}&amount={amount}") as resp:
+                async with session.get(
+                        f"http://localhost:5002/convert?currency_name={user_state['currency_name']}&amount={amount}") as resp:
                     if resp.status != 200:
                         await message.answer("Ошибка при конвертации валюты.")
                         del state[user_id]
