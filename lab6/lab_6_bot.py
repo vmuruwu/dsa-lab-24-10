@@ -38,6 +38,10 @@ async def cmd_start(message: Message):
     kb.button(text="Управление валютами", callback_data="manage")
     kb.button(text="Курсы валют", callback_data="currencies")
     kb.button(text="Конвертация", callback_data="convert")
+
+    if await is_admin(str(message.from_user.id)):
+        kb.button(text="Управление админами", callback_data="admin_management")
+
     await message.answer("Выберите команду:", reply_markup=kb.as_markup())
 
 
@@ -55,6 +59,32 @@ async def general_callback_handler(callback: CallbackQuery):
         kb.button(text="Удалить валюту", callback_data="delete")
         kb.button(text="Изменить курс", callback_data="update")
         await callback.message.answer("Выберите действие:", reply_markup=kb.as_markup())
+
+    elif data == "admin_management":
+        if not await is_admin(str(callback.from_user.id)):
+            await callback.message.answer("⚠️ Эта команда доступна только администраторам")
+            return
+
+        kb = InlineKeyboardBuilder()
+        kb.button(text="Добавить админа", callback_data="add_admin")
+        kb.button(text="Удалить админа", callback_data="remove_admin")
+        await callback.message.answer("Управление администраторами:", reply_markup=kb.as_markup())
+
+    elif data == "add_admin":
+        if not await is_admin(str(callback.from_user.id)):
+            await callback.message.answer("⚠️ Эта команда доступна только администраторам")
+            return
+
+        state[callback.from_user.id] = {"action": "add_admin"}
+        await callback.message.answer("Введите chat_id нового администратора:")
+
+    elif data == "remove_admin":
+        if not await is_admin(str(callback.from_user.id)):
+            await callback.message.answer("⚠️ Эта команда доступна только администраторам")
+            return
+
+        state[callback.from_user.id] = {"action": "remove_admin"}
+        await callback.message.answer("Введите chat_id администратора для удаления:")
 
     elif data == "currencies":
         async with aiohttp.ClientSession() as session:
@@ -91,8 +121,44 @@ async def handle_text(message: Message):
     user_id = message.from_user.id
     if user_id not in state:
         return
+
     user_state = state[user_id]
     action = user_state.get("action")
+
+    if action in ("add_admin", "remove_admin"):
+        chat_id = message.text.strip()
+
+        try:
+            if action == "add_admin":
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                            "http://localhost:5003/add_admin",
+                            json={"chat_id": chat_id}
+                    ) as resp:
+                        if resp.status == 200:
+                            await message.answer(f"Пользователь {chat_id} добавлен как администратор")
+                        elif resp.status == 400:
+                            await message.answer("Этот пользователь уже является администратором")
+                        else:
+                            await message.answer("Ошибка при добавлении администратора")
+
+            elif action == "remove_admin":
+                async with aiohttp.ClientSession() as session:
+                    async with session.delete(
+                            f"http://localhost:5003/remove_admin/{chat_id}"
+                    ) as resp:
+                        if resp.status == 200:
+                            await message.answer(f"Пользователь {chat_id} удалён из администраторов")
+                        elif resp.status == 404:
+                            await message.answer("Администратор с таким chat_id не найден")
+                        else:
+                            await message.answer("Ошибка при удалении администратора")
+
+        except Exception as e:
+            await message.answer(f"Произошла ошибка: {str(e)}")
+
+        del state[user_id]
+        return
 
     if action in ("add", "delete", "update"):
         if "currency_name" not in user_state:
