@@ -1,79 +1,44 @@
-from flask import Flask, request, jsonify
-import psycopg2
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+import asyncpg
 
-app = Flask(__name__)
+app = FastAPI()
 
-
-# Подключение к БД
-def get_db_connection():
-    conn = psycopg2.connect(
-        host="localhost",
-        database="currency_db",
-        user="postgres",
-        password="postgres",
+async def get_db():
+    return await asyncpg.connect(
+        user='postgres',
+        password='postgres',
+        database='tg_bot_vt',
+        host='localhost',
         port=5432
     )
-    return conn
 
-
-@app.route('/convert', methods=['GET'])
-def convert_currency():
-    currency_name = request.args.get('currency')
-    amount = request.args.get('amount')
-
-    if not currency_name or not amount:
-        return jsonify({'error': 'Отсутствует валюта или сумма'}), 400
-
+@app.get("/convert")
+async def convert_currency(currency_name: str, amount: float):
+    name = currency_name.upper()
+    conn = await get_db()
     try:
-        amount = float(amount)
-    except ValueError:
-        return jsonify({'error': 'Сумма должна быть числом'}), 400
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    try:
-        # Получение курса валюты
-        cur.execute("SELECT rate FROM currencies WHERE currency_name = %s", (currency_name,))
-        result = cur.fetchone()
-
-        if not result:
-            return jsonify({'error': 'Валюта не найдена'}), 404
-
-        rate = result[0]
-        converted_amount = amount * rate
-
-        return jsonify({
-            'original_amount': amount,
-            'currency': currency_name,
-            'rate': rate,
-            'converted_amount': converted_amount
-        }), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        row = await conn.fetchrow("SELECT rate FROM currencies WHERE currency_name=$1", name)
+        if not row:
+            raise HTTPException(status_code=404, detail="Валюта не найдена")
+        rate = row['rate']
+        converted = round(amount * float(rate), 2)
     finally:
-        cur.close()
-        conn.close()
+        await conn.close()
+
+    return JSONResponse(content={"converted_amount": converted})
 
 
-@app.route('/currencies', methods=['GET'])
-def get_currencies():
-    conn = get_db_connection()
-    cur = conn.cursor()
-
+@app.get("/currencies")
+async def list_currencies():
+    conn = await get_db()
     try:
-        cur.execute("SELECT currency_name, rate FROM currencies ORDER BY currency_name")
-        currencies = cur.fetchall()
-
-        result = [{'currency': curr[0], 'rate': curr[1]} for curr in currencies]
-
-        return jsonify({'currencies': result}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        rows = await conn.fetch("SELECT currency_name, rate FROM currencies")
+        result = [{"currency_name": r["currency_name"], "rate": float(r["rate"])} for r in rows]
     finally:
-        cur.close()
-        conn.close()
+        await conn.close()
+    return result
 
-
-if __name__ == '__main__':
-    app.run(port=5002, debug=True)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("lab_6_data_manager:app", port=5002)

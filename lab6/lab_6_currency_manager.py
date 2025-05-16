@@ -1,115 +1,67 @@
-from flask import Flask, request, jsonify
-import psycopg2
+from fastapi import FastAPI, HTTPException, Request
+import asyncpg
 
-app = Flask(__name__)
+app = FastAPI()
 
-
-# Подключение к БД
-def get_db_connection():
-    conn = psycopg2.connect(
-        host="localhost",
-        database="tg_bot_vt",
-        user="postgres",
-        password="postgres",
+async def get_db():
+    return await asyncpg.connect(
+        user='postgres',
+        password='postgres',
+        database='tg_bot_vt',
+        host='localhost',
         port=5432
     )
-    return conn
 
+@app.post("/load")
+async def load_currency(request: Request):
+    data = await request.json()
+    name = data['currency_name'].upper()
+    rate = data['rate']
 
-@app.route('/load', methods=['POST'])
-def load_currency():
-    data = request.get_json()
-    currency_name = data.get('currency_name')
-    rate = data.get('rate')
-
-    if not currency_name or not rate:
-        return jsonify({'error': 'Отсутствует название валюты или курс'}), 400
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
+    conn = await get_db()
     try:
-        # Проверка существования валюты
-        cur.execute("SELECT 1 FROM currencies WHERE currency_name = %s", (currency_name,))
-        if cur.fetchone():
-            return jsonify({'error': 'Валюта уже существует'}), 400
-
-        # Добавление новой валюты
-        cur.execute(
-            "INSERT INTO currencies (currency_name, rate) VALUES (%s, %s)",
-            (currency_name, rate)
-        )
-        conn.commit()
-        return jsonify({'message': f'Валюта {currency_name} успешно добавлена'}), 200
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
+        existing = await conn.fetchrow("SELECT * FROM currencies WHERE currency_name=$1", name)
+        if existing:
+            raise HTTPException(status_code=400, detail="Currency already exists")
+        await conn.execute("INSERT INTO currencies (currency_name, rate) VALUES ($1, $2)", name, rate)
     finally:
-        cur.close()
-        conn.close()
+        await conn.close()
 
+    return {"Статус": "Валюта добавлена"}
 
-@app.route('/update_currency', methods=['POST'])
-def update_currency():
-    data = request.get_json()
-    currency_name = data.get('currency_name')
-    new_rate = data.get('rate')
+@app.post("/update_currency")
+async def update_currency(request: Request):
+    data = await request.json()
+    name = data['currency_name'].upper()
+    rate = data['rate']
 
-    if not currency_name or not new_rate:
-        return jsonify({'error': 'Отсутствует название валюты или курс'}), 400
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
+    conn = await get_db()
     try:
-        # Проверка существования валюты
-        cur.execute("SELECT 1 FROM currencies WHERE currency_name = %s", (currency_name,))
-        if not cur.fetchone():
-            return jsonify({'error': 'Валюта не найдена'}), 404
-
-        # Обновление курса
-        cur.execute(
-            "UPDATE currencies SET rate = %s WHERE currency_name = %s",
-            (new_rate, currency_name)
-        )
-        conn.commit()
-        return jsonify({'message': f'Курс валюты {currency_name} успешно обновлен'}), 200
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
+        existing = await conn.fetchrow("SELECT * FROM currencies WHERE currency_name=$1", name)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Валюта не найдена")
+        await conn.execute("UPDATE currencies SET rate=$1 WHERE currency_name=$2", rate, name)
     finally:
-        cur.close()
-        conn.close()
+        await conn.close()
 
+    return {"Статус": "Курс валюты обновлён"}
 
-@app.route('/delete', methods=['POST'])
-def delete_currency():
-    data = request.get_json()
-    currency_name = data.get('currency_name')
+@app.post("/delete")
+async def delete_currency(request: Request):
+    data = await request.json()
+    name = data['currency_name'].upper()
 
-    if not currency_name:
-        return jsonify({'error': 'Отсутствует название валюты'}), 400
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
+    conn = await get_db()
     try:
-        # Проверка существования валюты
-        cur.execute("SELECT 1 FROM currencies WHERE currency_name = %s", (currency_name,))
-        if not cur.fetchone():
-            return jsonify({'error': 'Валюта не найдена'}), 404
-
-        # Удаление валюты
-        cur.execute("DELETE FROM currencies WHERE currency_name = %s", (currency_name,))
-        conn.commit()
-        return jsonify({'message': f'Валюта {currency_name} успешно удалена'}), 200
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': str(e)}), 500
+        existing = await conn.fetchrow("SELECT * FROM currencies WHERE currency_name=$1", name)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Валюта не найдена")
+        await conn.execute("DELETE FROM currencies WHERE currency_name=$1", name)
     finally:
-        cur.close()
-        conn.close()
+        await conn.close()
 
+    return {"Статус": "Валюта удалена"}
 
-if __name__ == '__main__':
-    app.run(port=5001, debug=True)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("lab_6_currency_manager:app", port=5001)

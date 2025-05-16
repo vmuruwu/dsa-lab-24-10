@@ -1,284 +1,149 @@
-import aiohttp
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.enums import ParseMode
-from aiogram.filters import Command
-from aiogram.types import Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.client.default import DefaultBotProperties
 import asyncio
+import aiohttp
+from aiogram import Bot, Dispatcher
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import CommandStart
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 import os
+import logging
 
-# Configuration
+# Настройка бота
 API_TOKEN = os.getenv("API_TOKEN")
-CURRENCY_MANAGER_URL = "http://localhost:5001"
-DATA_MANAGER_URL = "http://localhost:5002"
 
-# Initialize bot and dispatcher
-bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+# Логирование
+logging.basicConfig(level=logging.INFO)
+
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
+state = {}
 
-# States
-class CurrencyStates(StatesGroup):
-    ADD_CURRENCY_NAME = State()
-    ADD_CURRENCY_RATE = State()
-    DELETE_CURRENCY = State()
-    UPDATE_CURRENCY_NAME = State()
-    UPDATE_CURRENCY_RATE = State()
-    CONVERT_CURRENCY_NAME = State()
-    CONVERT_AMOUNT = State()
-
-
-async def make_async_request(url, method="GET", json_data=None, params=None):
-    async with aiohttp.ClientSession() as session:
-        if method == "GET":
-            async with session.get(url, params=params) as response:
-                return await response.json(), response.status
-        elif method == "POST":
-            async with session.post(url, json=json_data) as response:
-                return await response.json(), response.status
-
-
-@dp.message(Command("start"))
+@dp.message(CommandStart())
 async def cmd_start(message: Message):
-    """Обработка команды /start."""
-    commands = [
-        "/manage_currency - Управление валютами",
-        "/get_currencies - Список всех валют",
-        "/convert - Конвертировать валюту в RUB"
-    ]
-    await message.answer("\n".join(commands))
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Управление валютами", callback_data="manage")
+    kb.button(text="Курсы валют", callback_data="currencies")
+    kb.button(text="Конвертация", callback_data="convert")
+    await message.answer("Выберите команду:", reply_markup=kb.as_markup())
 
 
-@dp.message(Command("manage_currency"))
-async def manage_currency(message: Message, state: FSMContext):
-    """Меню управления валютами."""
-    keyboard = [
-        ["Добавить валюту", "Удалить валюту"],
-        ["Изменить курс", "Отмена"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True, one_time_keyboard=True)
-    await message.answer(
-        "Выберите действие:",
-        reply_markup=reply_markup
-    )
+@dp.callback_query()
+async def general_callback_handler(callback: CallbackQuery):
+    data = callback.data
+
+    if data == "manage":
+        kb = InlineKeyboardBuilder()
+        kb.button(text="Добавить валюту", callback_data="add")
+        kb.button(text="Удалить валюту", callback_data="delete")
+        kb.button(text="Изменить курс", callback_data="update")
+        await callback.message.answer("Выберите действие:", reply_markup=kb.as_markup())
+
+    elif data == "currencies":
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:5002/currencies") as resp:
+                if resp.status != 200:
+                    await callback.message.answer("Ошибка при получении списка валют.")
+                    return
+                data = await resp.json()
+
+        text = "Список валют:\n"
+        for c in data:
+            text += f"{c['currency_name']}: {c['rate']}\n"
+        await callback.message.answer(text)
+
+    elif data == "convert":
+        state[callback.from_user.id] = {"action": "convert"}
+        await callback.message.answer("Введите название валюты:")
+
+    elif data in ["add", "delete", "update"]:
+        action = data
+        state[callback.from_user.id] = {"action": action}
+        await callback.message.answer("Введите название валюты:")
+
+    else:
+        await callback.answer("Неизвестная команда")
 
 
-@dp.message(F.text.casefold() == "добавить валюту")
-async def add_currency_name(message: Message, state: FSMContext):
-    """Запрос названия валюты для добавления."""
-    await state.set_state(CurrencyStates.ADD_CURRENCY_NAME)
-    await message.answer(
-        "Введите название валюты:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-
-@dp.message(CurrencyStates.ADD_CURRENCY_NAME)
-async def add_currency_rate(message: Message, state: FSMContext):
-    """Запрос курса валюты."""
-    await state.update_data(currency_name=message.text)
-
-    # Проверка существования валюты
-    response, status = await make_async_request(f"{DATA_MANAGER_URL}/currencies")
-    if status == 200:
-        currencies = response.get('currencies', [])
-        for curr in currencies:
-            if curr['currency'].lower() == message.text.lower():
-                await message.answer("Данная валюта уже существует")
-                await state.clear()
-                return
-
-    await state.set_state(CurrencyStates.ADD_CURRENCY_RATE)
-    await message.answer("Введите курс к рублю:")
-
-
-@dp.message(CurrencyStates.ADD_CURRENCY_RATE)
-async def save_currency(message: Message, state: FSMContext):
-    """Сохранение новой валюты."""
-    try:
-        rate = float(message.text)
-    except ValueError:
-        await message.answer("Курс должен быть числом. Начните заново.")
-        await state.clear()
+@dp.message()
+async def handle_text(message: Message):
+    user_id = message.from_user.id
+    if user_id not in state:
         return
+    user_state = state[user_id]
+    action = user_state.get("action")
 
-    data = await state.get_data()
-    currency_name = data['currency_name']
+    if action in ("add", "delete", "update"):
+        if "currency_name" not in user_state:
+            user_state["currency_name"] = message.text.upper()
+            if action == "add":
+                async with aiohttp.ClientSession() as session:
+                    async with session.get("http://localhost:5002/currencies") as resp:
+                        if resp.status != 200:
+                            await message.answer("Ошибка при получении списка валют.")
+                            del state[user_id]
+                            return
+                        data = await resp.json()
+                        if any(c["currency_name"] == user_state["currency_name"] for c in data):
+                            await message.answer("Данная валюта уже существует")
+                            del state[user_id]
+                            return
+                await message.answer("Введите курс к рублю:")
 
-    # Отправка в микросервис
-    response, status = await make_async_request(
-        f"{CURRENCY_MANAGER_URL}/load",
-        method="POST",
-        json_data={'currency_name': currency_name, 'rate': rate}
-    )
+            elif action == "delete":
+                async with aiohttp.ClientSession() as session:
+                    async with session.post("http://localhost:5001/delete", json={"currency_name": user_state["currency_name"]}) as resp:
+                        if resp.status == 200:
+                            await message.answer("Валюта удалена")
+                        elif resp.status == 404:
+                            await message.answer("Такой валюты нет")
+                        else:
+                            await message.answer("Произошла ошибка при удалении валюты")
+                del state[user_id]
 
-    if status == 200:
-        await message.answer(f"Валюта: {currency_name} успешно добавлена")
-    else:
-        await message.answer(f"Ошибка: {response.get('error', 'Неизвестная ошибка')}")
+            elif action == "update":
+                await message.answer("Введите новый курс:")
 
-    await state.clear()
-
-
-@dp.message(F.text.casefold() == "удалить валюту")
-async def delete_currency(message: Message, state: FSMContext):
-    """Запрос названия валюты для удаления."""
-    await state.set_state(CurrencyStates.DELETE_CURRENCY)
-    await message.answer(
-        "Введите название валюты для удаления:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-
-@dp.message(CurrencyStates.DELETE_CURRENCY)
-async def perform_delete(message: Message, state: FSMContext):
-    """Удаление валюты."""
-    currency_name = message.text
-
-    # Отправка в микросервис
-    response, status = await make_async_request(
-        f"{CURRENCY_MANAGER_URL}/delete",
-        method="POST",
-        json_data={'currency_name': currency_name}
-    )
-
-    if status == 200:
-        await message.answer(f"Валюта: {currency_name} успешно удалена")
-    else:
-        await message.answer(f"Ошибка: {response.get('error', 'Неизвестная ошибка')}")
-
-    await state.clear()
-
-
-@dp.message(F.text.casefold() == "изменить курс")
-async def update_currency_name(message: Message, state: FSMContext):
-    """Запрос названия валюты для изменения курса."""
-    await state.set_state(CurrencyStates.UPDATE_CURRENCY_NAME)
-    await message.answer(
-        "Введите название валюты:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-
-@dp.message(CurrencyStates.UPDATE_CURRENCY_NAME)
-async def update_currency_rate(message: Message, state: FSMContext):
-    """Запрос нового курса валюты."""
-    await state.update_data(currency_name=message.text)
-    await state.set_state(CurrencyStates.UPDATE_CURRENCY_RATE)
-    await message.answer("Введите новый курс к рублю:")
-
-
-@dp.message(CurrencyStates.UPDATE_CURRENCY_RATE)
-async def perform_update(message: Message, state: FSMContext):
-    """Обновление курса валюты."""
-    try:
-        rate = float(message.text)
-    except ValueError:
-        await message.answer("Курс должен быть числом. Начните заново.")
-        await state.clear()
-        return
-
-    data = await state.get_data()
-    currency_name = data['currency_name']
-
-    # Отправка в микросервис
-    response, status = await make_async_request(
-        f"{CURRENCY_MANAGER_URL}/update_currency",
-        method="POST",
-        json_data={'currency_name': currency_name, 'rate': rate}
-    )
-
-    if status == 200:
-        await message.answer(f"Курс валюты {currency_name} успешно обновлен")
-    else:
-        await message.answer(f"Ошибка: {response.get('error', 'Неизвестная ошибка')}")
-
-    await state.clear()
-
-
-@dp.message(Command("get_currencies"))
-async def get_currencies(message: Message):
-    """Получение списка всех валют."""
-    response, status = await make_async_request(f"{DATA_MANAGER_URL}/currencies")
-
-    if status == 200:
-        currencies = response.get('currencies', [])
-        if currencies:
-            message_text = "\n".join(
-                f"{curr['currency']}: {curr['rate']} RUB"
-                for curr in currencies
-            )
         else:
-            message_text = "Нет доступных валют"
-    else:
-        message_text = "Ошибка при получении списка валют"
+            try:
+                rate = float(message.text)
+            except ValueError:
+                await message.answer("Введите корректное число для курса.")
+                return
+            payload = {
+                "currency_name": user_state["currency_name"],
+                "rate": rate
+            }
+            url = "http://localhost:5001/load" if action == "add" else "http://localhost:5001/update_currency"
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status == 200:
+                        await message.answer(f"Валюта {user_state['currency_name']} успешно обработана")
+                    elif resp.status == 404:
+                        await message.answer("Такой валюты нет")
+                    else:
+                        await message.answer("Произошла ошибка при обработке валюты")
+            del state[user_id]
 
-    await message.answer(message_text)
-
-
-@dp.message(Command("convert"))
-async def convert_currency(message: Message, state: FSMContext):
-    """Начало процесса конвертации."""
-    await state.set_state(CurrencyStates.CONVERT_CURRENCY_NAME)
-    await message.answer(
-        "Введите название валюты:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-
-@dp.message(CurrencyStates.CONVERT_CURRENCY_NAME)
-async def get_currency_amount(message: Message, state: FSMContext):
-    """Запрос суммы для конвертации."""
-    await state.update_data(currency_name=message.text)
-    await state.set_state(CurrencyStates.CONVERT_AMOUNT)
-    await message.answer("Введите сумму:")
-
-
-@dp.message(CurrencyStates.CONVERT_AMOUNT)
-async def perform_conversion(message: Message, state: FSMContext):
-    """Выполнение конвертации и вывод результата."""
-    try:
-        amount = float(message.text)
-    except ValueError:
-        await message.answer("Сумма должна быть числом. Начните заново.")
-        await state.clear()
-        return
-
-    data = await state.get_data()
-    currency_name = data['currency_name']
-
-    # Отправка в микросервис
-    response, status = await make_async_request(
-        f"{DATA_MANAGER_URL}/convert",
-        params={'currency': currency_name, 'amount': amount}
-    )
-
-    if status == 200:
-        await message.answer(
-            f"{response['original_amount']} {response['currency']} = "
-            f"{response['converted_amount']} RUB (курс: {response['rate']})"
-        )
-    else:
-        await message.answer(f"Ошибка: {response.get('error', 'Неизвестная ошибка')}")
-
-    await state.clear()
+    elif action == "convert":
+        if "currency_name" not in user_state:
+            user_state["currency_name"] = message.text.upper()
+            await message.answer("Введите сумму:")
+        else:
+            try:
+                amount = float(message.text)
+            except ValueError:
+                await message.answer("Введите корректное число для суммы.")
+                return
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"http://localhost:5002/convert?currency_name={user_state['currency_name']}&amount={amount}") as resp:
+                    if resp.status != 200:
+                        await message.answer("Ошибка при конвертации валюты.")
+                        del state[user_id]
+                        return
+                    data = await resp.json()
+                    await message.answer(f"Сумма в рублях: {data['converted_amount']}")
+            del state[user_id]
 
 
-@dp.message(F.text.casefold() == "отмена")
-async def cancel(message: Message, state: FSMContext):
-    """Отмена текущей операции."""
-    await state.clear()
-    await message.answer(
-        "Операция отменена",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-
-async def main():
-    await dp.start_polling(bot)
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(dp.start_polling(bot))
