@@ -3,7 +3,7 @@ import asyncpg
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardRemove, BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 from aiogram.filters import Command
 import re
 import logging
@@ -14,6 +14,20 @@ from aiogram import F
 API_TOKEN = os.getenv("API_TOKEN")
 ADMIN_COMMANDS = ['start', 'manage_currency', 'get_currencies', 'convert']
 USER_COMMANDS = ['start', 'get_currencies', 'convert']
+
+#Меню
+user_commands = [
+    BotCommand(command="start", description="Запуск"),
+    BotCommand(command="get_currencies", description="Список валют"),
+    BotCommand(command="convert", description="Конвертация"),
+]
+
+admin_commands = [
+    BotCommand(command="start", description="Запуск"),
+    BotCommand(command="manage_currency", description="Управление валютами"),
+    BotCommand(command="get_currencies", description="Список валют"),
+    BotCommand(command="convert", description="Конвертация"),
+]
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +62,18 @@ async def is_admin(chat_id):
     admin = await conn.fetchrow("SELECT * FROM admins WHERE chat_id = $1", chat_id)
     await conn.close()
     return admin is not None
+
+async def set_bot_commands():
+    await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
+
+    # Получаем список всех админов из базы данных
+    conn = await create_db_connection()
+    admins = await conn.fetch("SELECT chat_id FROM admins")
+    await conn.close()
+
+    # Устанавливаем команды для каждого админа
+    for admin in admins:
+        await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=admin['chat_id']))
 
 # Команда start
 @dp.message(Command('start'))
@@ -359,7 +385,9 @@ async def process_convert_amount(message: Message, state: FSMContext):
 
 # Запуск бота
 async def main():
+    await set_bot_commands()
     await dp.start_polling(bot)
+
 
 if __name__ == '__main__':
     import asyncio
