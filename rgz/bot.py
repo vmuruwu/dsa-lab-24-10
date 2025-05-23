@@ -43,6 +43,9 @@ class AddOperationState(StatesGroup):
 class CurrencyChoiceState(StatesGroup):
     waiting_for_currency = State()
 
+class OperationsDateState(StatesGroup):
+    waiting_for_date_from = State()
+    waiting_for_date_to = State()
 
 # Регистрация
 @dp.message(Command("reg"))
@@ -79,7 +82,7 @@ async def cmd_add_operation(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="💰 ДОХОД 💰", callback_data="income")],
         [InlineKeyboardButton(text="💸 РАСХОД 💸", callback_data="expense")]
     ])
-    await message.answer("Выберите тип операции:", reply_markup=keyboard)
+    await message.answer("🤔 Выберите тип операции:", reply_markup=keyboard)
     await state.set_state(AddOperationState.waiting_for_type)
     await db.close()
 
@@ -99,15 +102,15 @@ async def process_sum(message: Message, state: FSMContext):
         await message.answer("❌ Некорректное значение. Введите сумму в рублях, например: 1500.50")
         return
     await state.update_data(sum=amount)
-    await message.answer("📆 Введите дату операции в формате ГГГГ-ММ-ДД:")
+    await message.answer("📆 Введите дату операции в формате ДД-ММ-ГГГГ:")
     await state.set_state(AddOperationState.waiting_for_date)
 
 @dp.message(AddOperationState.waiting_for_date)
 async def process_date(message: Message, state: FSMContext):
     try:
-        date_obj = datetime.strptime(message.text, "%Y-%m-%d").date()
+        date_obj = datetime.strptime(message.text, "%d-%m-%Y").date()
     except ValueError:
-        await message.answer("❌ Неверный формат даты. Введите в формате ГГГГ-ММ-ДД.")
+        await message.answer("❌ Неверный формат даты. Введите в формате ДД-ММ-ГГГГ.")
         return
 
     data = await state.get_data()
@@ -120,7 +123,7 @@ async def process_date(message: Message, state: FSMContext):
     await db.close()
     await state.clear()
 
-# 1-3. Команда /operations, проверка регистрации, выбор валюты
+# Изменяем /operations, чтобы запускать FSM с запроса даты "с"
 @dp.message(Command("operations"))
 async def cmd_operations(message: Message, state: FSMContext):
     db = await get_db()
@@ -131,6 +134,41 @@ async def cmd_operations(message: Message, state: FSMContext):
         await message.answer("🙅‍♀️ Сначала зарегистрируйтесь командой /reg.")
         return
 
+    await message.answer("1️⃣ Введите начальную дату периода в формате ДД-ММ-ГГГГ:")
+    await state.set_state(OperationsDateState.waiting_for_date_from)
+
+# Обработка даты "с"
+@dp.message(OperationsDateState.waiting_for_date_from)
+async def process_date_from(message: Message, state: FSMContext):
+    try:
+        date_from = datetime.strptime(message.text, "%d-%m-%Y").date()
+    except ValueError:
+        await message.answer("❌ Неверный формат даты. Введите в формате ДД-ММ-ГГГ.")
+        return
+
+    await state.update_data(date_from=date_from)
+    await message.answer("2️⃣ Введите конечную дату периода в формате ДД-ММ-ГГГГ:")
+    await state.set_state(OperationsDateState.waiting_for_date_to)
+
+# Обработка даты "по"
+@dp.message(OperationsDateState.waiting_for_date_to)
+async def process_date_to(message: Message, state: FSMContext):
+    try:
+        date_to = datetime.strptime(message.text, "%d-%m-%Y").date()
+    except ValueError:
+        await message.answer("❌ Неверный формат даты. Введите в формате ДД-ММ-ГГГГ.")
+        return
+
+    data = await state.get_data()
+    date_from = data.get("date_from")
+
+    if date_to < date_from:
+        await message.answer("⁉️ Конечная дата не может быть меньше начальной. Попробуйте снова.")
+        return
+
+    await state.update_data(date_to=date_to)
+
+    # Предлагаем выбрать валюту
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="RUB", callback_data="RUB")],
         [InlineKeyboardButton(text="EUR", callback_data="EUR")],
@@ -139,50 +177,55 @@ async def cmd_operations(message: Message, state: FSMContext):
     await message.answer("🤔 Выберите валюту для отображения операций:", reply_markup=keyboard)
     await state.set_state(CurrencyChoiceState.waiting_for_currency)
 
-
-# 4–8. Обработка валюты, запрос к внешнему сервису, конвертация и вывод
+# Обработка выбора валюты с учетом диапазона дат
 @dp.callback_query(CurrencyChoiceState.waiting_for_currency)
 async def process_currency(callback: CallbackQuery, state: FSMContext):
     currency = callback.data
     await callback.answer()
 
-    # шаг 5. Получение курса из внешнего сервиса
-    rate = 1.0
+    data = await state.get_data()
+    date_from = data.get("date_from")
+    date_to = data.get("date_to")
+
+    # Получение курса из внешнего сервиса
+    rate = Decimal('1.0')
     if currency in ["EUR", "USD"]:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"http://localhost:5000/rate?currency={currency}") as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        rate = data.get("rate", 1.0)
+                        data_resp = await resp.json()
+                        rate = Decimal(str(data_resp.get("rate", "1.0")))
                     else:
-                        await callback.message.answer("Ошибка получения курса валют.")
+                        await callback.message.answer("💀 Ошибка получения курса валют.")
+                        await state.clear()
                         return
         except Exception:
-            await callback.message.answer("Внешний сервис недоступен.")
+            await callback.message.answer("😭 Внешний сервис недоступен.")
+            await state.clear()
             return
 
-    # шаг 6. Получение операций
+    # Запрос операций в БД за период
     db = await get_db()
-    operations = await db.fetch("SELECT * FROM operations WHERE chat_id = $1", callback.from_user.id)
+    operations = await db.fetch(
+        "SELECT * FROM operations WHERE chat_id = $1 AND date >= $2 AND date <= $3 ORDER BY date",
+        callback.from_user.id, date_from, date_to
+    )
     await db.close()
 
-    # шаг 7. Конвертация
     if not operations:
-        await callback.message.answer("😵‍💫 У вас нет операций.")
+        await callback.message.answer(f"😵 У вас нет операций с {date_from} по {date_to}.")
+        await state.clear()
         return
 
-    rate = Decimal(str(rate))  # Приводим курс к Decimal
-
-    text = f"🙌 Ваши операции в валюте {currency}:\n"
+    # Формируем сообщение с операциями
+    text = f"🙌 Ваши операции с {date_from} по {date_to} в валюте {currency}:\n"
     for op in operations:
-        date = op["date"].strftime("%d-%m-%Y")
+        date_str = op["date"].strftime("%d-%m-%Y")
         sum_converted = round(op["sum"] / rate, 2)
-        text += f"{date}: {op['type_operation']} - {sum_converted} {currency}\n"
+        text += f"{date_str}: {op['type_operation']} - {sum_converted} {currency}\n"
 
-    # шаг 8. Вывод
     await callback.message.answer(text)
-    await state.clear()
 
 
 if __name__ == "__main__":
