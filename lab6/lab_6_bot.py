@@ -1,7 +1,7 @@
 import asyncio
 import aiohttp
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, BotCommand, BotCommandScopeDefault
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import os
@@ -18,6 +18,9 @@ dp = Dispatcher()
 
 state = {}
 
+user_commands = [
+    BotCommand(command="start", description="Запуск")
+]
 
 async def is_admin(chat_id):
     async with aiohttp.ClientSession() as session:
@@ -31,6 +34,12 @@ async def is_admin(chat_id):
             logging.error(f"Ошибка при проверке администратора: {e}")
             return False
 
+async def reset_bot_commands():
+    await bot.delete_my_commands(scope=BotCommandScopeDefault())
+
+async def set_bot_commands():
+    await reset_bot_commands()
+    await bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
@@ -236,4 +245,5 @@ async def handle_text(message: Message):
 
 
 if __name__ == "__main__":
+    asyncio.run(set_bot_commands())
     asyncio.run(dp.start_polling(bot))

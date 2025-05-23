@@ -15,7 +15,7 @@ API_TOKEN = os.getenv("API_TOKEN")
 ADMIN_COMMANDS = ['start', 'manage_currency', 'get_currencies', 'convert']
 USER_COMMANDS = ['start', 'get_currencies', 'convert']
 
-#Меню
+# Команды меню
 user_commands = [
     BotCommand(command="start", description="Запуск"),
     BotCommand(command="get_currencies", description="Список валют"),
@@ -385,7 +385,6 @@ async def process_convert_amount(message: Message, state: FSMContext):
 
 # Запуск бота
 async def main():
-    await set_bot_commands()
     await dp.start_polling(bot)
 
 
