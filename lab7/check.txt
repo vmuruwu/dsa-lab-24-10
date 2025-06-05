@@ -1,0 +1,11 @@
+Позитивные тесты:
+1. (3, 3, 3) → "equilateral"
+2. (4, 4, 5) → "isosceles"
+3. (5, 4, 3) → "nonequilateral"
+
+Негативные тесты:
+1. (0, 3, 3) → IncorrectTriangleSides
+2. (-1, 4, 5) → IncorrectTriangleSides
+3. (1, 2, 3) → IncorrectTriangleSides (не выполняется неравенство треугольника)
+4. (10, 2, 2) → IncorrectTriangleSides
+
